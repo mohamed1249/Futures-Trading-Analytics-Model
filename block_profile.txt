@@ -1,0 +1,85 @@
+import pandas as pd
+pd.set_option('display.max_rows', 100)
+pd.set_option('display.max_columns', 100)
+df =  pd.read_csv('bar_data_03-2023_thru_07-2023.csv')
+df.head(10)
+
+# %%
+df.info()
+
+# %%
+df['bar_buy_vol'] = df['buy0']
+df['bar_sell_vol'] = df['sell0']
+
+for idx in range(1,7):
+    df['bar_buy_vol'] += df[f'buy{idx}']
+    df['bar_sell_vol'] += df[f'sell{idx}']
+
+df['bar_total_vol'] = df['bar_buy_vol'] + df['bar_sell_vol']
+
+for i in df.index:
+    block_df = df[df.block_id == df.loc[i,'block_id']]
+
+    grouped_block_buy_vol = block_df[block_df.bar_number != -1]['bar_buy_vol'].sum()
+    grouped_block_sell_vol = block_df[block_df.bar_number != -1]['bar_sell_vol'].sum()
+
+    total_block_vol = grouped_block_buy_vol + grouped_block_sell_vol
+
+    df.loc[i,'bock_buy_vol'] = grouped_block_buy_vol
+    df.loc[i,'bock_sell_vol'] = grouped_block_sell_vol
+    df.loc[i,'bock_total_vol'] = total_block_vol
+
+# %%
+# Initialize an empty dictionary to store volume profiles for different blocks.
+block_vol_profiles = {}
+
+# Iterate through unique block IDs in the DataFrame.
+for block in df.block_id.unique():
+    # Create an empty DataFrame to store the volume profile for the current block.
+    block_vol_profile = pd.DataFrame()
+    
+    # Filter the DataFrame to include only rows with the current block ID.
+    block_df = df[df.block_id == block]
+    
+    # Remove rows with bar_number equal to -1.
+    block_df = block_df[block_df.bar_number != -1]
+    
+    # Create a dictionary to store prices for each bar.
+    bar_prices = {}
+    
+    # Iterate through unique bar numbers in the current block DataFrame.
+    for bar_number in block_df.bar_number:
+        # Extract prices, buy volumes, and sell volumes for the current bar.
+        prices = block_df[block_df.bar_number == bar_number][[col for col in block_df if 'price' in col]].T.iloc[:, 0].to_list()
+        buys = block_df[block_df.bar_number == bar_number][[col for col in block_df if 'buy' in col and '_' not in col]].T.iloc[:, 0].to_list()
+        sells = block_df[block_df.bar_number == bar_number][[col for col in block_df if 'sell' in col and '_' not in col]].T.iloc[:, 0].to_list()
+        
+        # Iterate through prices, buy volumes, and sell volumes simultaneously.
+        for price, buy, sell in zip(prices, buys, sells):
+            try:
+                # Try to add the buy volume to the existing entry for the given price.
+                block_vol_profile.loc[price, 'buy'] += buy
+            except:
+                # If the entry doesn't exist, create it and set the buy volume.
+                block_vol_profile.loc[price, 'buy'] = buy
+                
+            # Fill any missing values with zero and calculate the total volume.
+            block_vol_profile.fillna(0, inplace=True)
+            
+            try:
+                # Try to add the sell volume to the existing entry for the given price.
+                block_vol_profile.loc[price, 'sell'] += sell
+            except:
+                # If the entry doesn't exist, create it and set the sell volume.
+                block_vol_profile.loc[price, 'sell'] = sell
+                
+            # Update the total volume entry for the current price.
+            block_vol_profile.loc[price, 'total_vol'] = buy + sell
+        
+    # Fill any remaining missing values with zero, reset the index, and rename the index column.
+    block_vol_profile.fillna(0, inplace=True)
+    block_vol_profile.reset_index(inplace=True)
+    block_vol_profile.rename(columns={'index': 'prices'}, inplace=True)
+    
+    # Store the volume profile for the current block in the dictionary.
+    block_vol_profiles[block] = block_vol_profile
